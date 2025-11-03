@@ -109,10 +109,10 @@ long targetSteps = 0;
 // === Uli ===
 // --- Helper functions ---
 float getSensorDistance(float mV) {
-  if (mV > mVinterval * tableEntries - 1) return sensorDistanceTable[tableEntries - 1];
+  if (mV > mVinterval * tableEntries - 1) return sensorDistance[tableEntries - 1];
   int index = mV / mVinterval;
   float frac = fmod(mV, (float)mVinterval) / (float)mVinterval;
-  return sensorDistanceTable[index] - ((sensorDistanceTable[index] - sensorDistanceTable[index + 1]) * frac);
+  return sensorDistance[index] - ((sensorDistance[index] - sensorDistance[index + 1]) * frac);
 }
 
 float getDistanceFromSensor() {
@@ -190,36 +190,41 @@ float shortestAngle(float fromDeg, float toDeg) {
 // comandos remotos
 // Aquí  estará la funcion de lectura de comandos remotos
 // ------------------------------------------------------------------
-void processRemoteCommand(float distCm, float angleDeg) {
-  // Guardar pedido de distancia
-  desiredDistanceCm = distCm;
-
-  // El ángulo recibido es directamente cuánto girar
-  float dAng = angleDeg;
-  // Actualizar el heading final
-  desiredHeading = fmod(currentHeading + dAng, 360.0);
-  if (desiredHeading < 0) desiredHeading += 360.0;
-  long rotSteps = degreesToSteps(dAng);
-
-  if (rotSteps > 0) {
-    // Preparar rotación in-place: ruedas en sentidos opuestos
-    if (dAng > 0) { dirR = BACKWARD; dirL = FORWARD; }
-    else { dirR = FORWARD; dirL = BACKWARD; }
-    targetStepsR = rotSteps; targetStepsL = rotSteps;
-    doneStepsR = 0; doneStepsL = 0;
-    currentMode = ROTATING;
-    Serial.print("[REMOTE] Preparado ROTATE pasos="); Serial.println(rotSteps);
+void processRemoteCommand(float distCm, float angleDeg, float out) {
+  if (out==1){
+    Serial.print(out);
+    currentMode = TURN_180;
   } else {
-    // Ya orientado: preparar avance
-    long moveSteps = distanceCmToSteps(desiredDistanceCm);
-    if (moveSteps > 0) {
-      dirR = FORWARD; dirL = FORWARD;
-      targetStepsR = moveSteps; targetStepsL = moveSteps;
+    // Guardar pedido de distancia
+    desiredDistanceCm = distCm;
+
+    // El ángulo recibido es directamente cuánto girar
+    float dAng = angleDeg;
+    // Actualizar el heading final
+    desiredHeading = fmod(currentHeading + dAng, 360.0);
+    if (desiredHeading < 0) desiredHeading += 360.0;
+    long rotSteps = degreesToSteps(dAng);
+
+    if (rotSteps > 0) {
+      // Preparar rotación in-place: ruedas en sentidos opuestos
+      if (dAng > 0) { dirR = BACKWARD; dirL = FORWARD; }
+      else { dirR = FORWARD; dirL = BACKWARD; }
+      targetStepsR = rotSteps; targetStepsL = rotSteps;
       doneStepsR = 0; doneStepsL = 0;
-      currentMode = MOVING;
-      Serial.print("[REMOTE] Preparado MOVE pasos="); Serial.println(moveSteps);
+      currentMode = ROTATING;
+      Serial.print("[REMOTE] Preparado ROTATE pasos="); Serial.println(rotSteps);
     } else {
-      currentMode = IDLE;
+      // Ya orientado: preparar avance
+      long moveSteps = distanceCmToSteps(desiredDistanceCm);
+      if (moveSteps > 0) {
+        dirR = FORWARD; dirL = FORWARD;
+        targetStepsR = moveSteps; targetStepsL = moveSteps;
+        doneStepsR = 0; doneStepsL = 0;
+        currentMode = MOVING;
+        Serial.print("[REMOTE] Preparado MOVE pasos="); Serial.println(moveSteps);
+      } else {
+        currentMode = IDLE;
+      }
     }
   }
 }
@@ -277,9 +282,9 @@ void loop() {
         line.replace('A', ' ');
         line.replace('a', ' ');
         // tokenizar
-        float vals[2]; int cnt = 0;
+        float vals[3]; int cnt = 0;
         int i = 0;
-        while (i < line.length() && cnt < 2) {
+        while (i < line.length() && cnt < 3) {
           while (i < line.length() && isSpace(line[i])) i++;
           if (i >= line.length()) break;
           int j = i;
@@ -289,11 +294,12 @@ void loop() {
           vals[cnt++] = atof(buf);
           i = j;
         }
-        if (cnt == 2) {
+        if (cnt == 3) {
           float rxDist = vals[0];
           float rxAng = vals[1];
+          float out = vals[2];
           Serial.print("[STUB] Recibido: "); Serial.print(rxDist); Serial.print(" cm, "); Serial.print(rxAng); Serial.println(" deg");
-          processRemoteCommand(rxDist, rxAng);
+          processRemoteCommand(rxDist, rxAng, out);
           Serial.println("[STUB] ACK");
         } else {
           Serial.print("[STUB] Formato inválido: '"); Serial.print(line); Serial.println("' (usar: '<dist_cm> <angle_deg>' )");
@@ -413,6 +419,7 @@ void loop() {
       if (doneStepsR < targetStepsR) { motorR.step(1, dirR, SINGLE); doneStepsR++; }
       if (doneStepsL < targetStepsL) { motorL.step(1, dirL, SINGLE); doneStepsL++; }
       if (doneStepsR >= targetStepsR && doneStepsL >= targetStepsL) { Serial.println("[TEST] Movimiento completado."); currentMode = IDLE; }
+
     } else if (currentMode == TURN_180){
       if (!moving) {
         Serial.println("🔄 Turning 180°...");
@@ -431,7 +438,6 @@ void loop() {
           Serial.println("✅ Turn 180° done, starting scan.");
         }
       }
-      
       // IDLE: no steps
     } else if (currentMode == SCAN){
       if (currentScanIndex < NUM_SCAN_ANGLES) {
