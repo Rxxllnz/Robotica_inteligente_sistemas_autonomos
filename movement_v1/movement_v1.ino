@@ -1,6 +1,7 @@
 // === Librerías necesarias ===
 #include <DMotor_mod.h>
 #include <Servo_ESP8266.h>
+#include <math.h>
 
 // === Pines ===
 #define ledPin D0
@@ -54,6 +55,7 @@ const float WHEELS_AXIS_CM = 16.0;      // distancia entre ejes en cm
 // convertimos a mm y diámetro
 const float WHEEL_DIAMETER_MM = WHEEL_RADIUS_CM * 2.0 * 10.0; // cm->mm
 const float WHEEL_BASE_MM = WHEELS_AXIS_CM * 10.0;          // cm->mm
+float twoPi = 2 * 3.1416;
 
 // Resolución del stepper (proporcionada)
 int stepperResolution = 256;  // 8 bits, corresponde al primer parámetro de AF_Stepper
@@ -62,7 +64,7 @@ int stepperResolution = 256;  // 8 bits, corresponde al primer parámetro de AF_
 long stepsPerRevMicro() { return (long)stepperResolution * (long)stepToMicrostep; }
 
 // Máquina de estados para movimiento (no bloqueante)
-enum RobotMode { IDLE, ROTATING, MOVING };
+enum RobotMode { IDLE, ROTATING, MOVING, TURN_180, SCAN, TURN_TO_TARGET, DRIVE_FORWARD, TURN_BACK};
 RobotMode currentMode = IDLE;
 
 // Objetivos de pasos para cada rueda
@@ -86,6 +88,24 @@ float desiredDistanceCm = 0.0;
 const int tableEntries = 10;
 const int mVinterval = 100;
 static float sensorDistance[tableEntries] = {80.0,70.0,60.0,50.0,40.0,30.0,25.0,20.0,15.0,10.0};
+
+// --- Parameters ---
+const float SAFE_DISTANCE = 27.0; // Stop distance before wall
+const int SCAN_ANGLES[] = {0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180};
+const int NUM_SCAN_ANGLES = sizeof(SCAN_ANGLES) / sizeof(SCAN_ANGLES[0]);
+
+// --- Movement tracking ---
+bool moving = false;
+unsigned long lastActionTime = 0;
+unsigned long lastStepTime = 0;
+unsigned long servoMoveStart = 0;
+int currentScanIndex = 0;
+float scanDistances[NUM_SCAN_ANGLES];
+float lastDistance = 0;
+int targetAngle = 90;
+long currentSteps = 0;
+long targetSteps = 0;
+
 // === Uli ===
 // --- Helper functions ---
 float getSensorDistance(float mV) {
@@ -103,7 +123,7 @@ float getDistanceFromSensor() {
 }
 
 long computeSteps(float angle) {
-  return angle * stepperResolution * stepToMicrostep * wheelsAxisDis / (wheelRadius * 720);
+  return angle * stepperResolution * stepToMicrostep * WHEELS_AXIS_CM / (WHEEL_RADIUS_CM * 720);
 }
 
 void stepMotors(char dir) {
@@ -393,8 +413,125 @@ void loop() {
       if (doneStepsR < targetStepsR) { motorR.step(1, dirR, SINGLE); doneStepsR++; }
       if (doneStepsL < targetStepsL) { motorL.step(1, dirL, SINGLE); doneStepsL++; }
       if (doneStepsR >= targetStepsR && doneStepsL >= targetStepsL) { Serial.println("[TEST] Movimiento completado."); currentMode = IDLE; }
-    } else {
+    } else if (currentMode == TURN_180){
+      if (!moving) {
+        Serial.println("🔄 Turning 180°...");
+        targetSteps = computeSteps(180);
+        currentSteps = 0;
+        moving = true;
+      }
+      if (moving && (currentMillis - lastStepTime >= 2)) {
+        stepMotors('R');
+        currentSteps++;
+        lastStepTime = currentMillis;
+        if (currentSteps >= targetSteps) {
+          moving = false;
+          currentScanIndex = 0;
+          currentMode = SCAN;
+          Serial.println("✅ Turn 180° done, starting scan.");
+        }
+      }
+      
       // IDLE: no steps
+    } else if (currentMode == SCAN){
+      if (currentScanIndex < NUM_SCAN_ANGLES) {
+        // Move servo non-blocking
+        if (servoMoveStart == 0) {
+          int angle = SCAN_ANGLES[currentScanIndex];
+          sensorServo.write(angle);
+          servoMoveStart = currentMillis;
+        }
+        // After 250 ms, take measurement
+        if (currentMillis - servoMoveStart >= 250) {
+          scanDistances[currentScanIndex] = getDistanceFromSensor();
+          Serial.print("Angle ");
+          Serial.print(SCAN_ANGLES[currentScanIndex]);
+          Serial.print("° -> ");
+          Serial.print(scanDistances[currentScanIndex]);
+          Serial.println(" cm");
+          currentScanIndex++;
+          servoMoveStart = 0;
+        }
+      } else {
+        // Find minimum distance
+        float minDist = scanDistances[0];
+        int minIdx = 0;
+        for (int i = 1; i < NUM_SCAN_ANGLES; i++) {
+          if (scanDistances[i] < minDist) {
+            minDist = scanDistances[i];
+            minIdx = i;
+          }
+        }
+        targetAngle = SCAN_ANGLES[minIdx];
+        Serial.print("Closest wall at ");
+        Serial.print(targetAngle);
+        Serial.print("° (");
+        Serial.print(minDist);
+        Serial.println(" cm)");
+        sensorServo.write(90);
+        currentMode = TURN_TO_TARGET;
+      }
+    } else if (currentMode == TURN_TO_TARGET){
+      if (!moving) {
+        float diff = fabs(targetAngle - 90);
+        if (diff < 3) {
+          Serial.println("Already facing target.");
+          currentMode = DRIVE_FORWARD;
+        } else {
+          char dir = (targetAngle < 90) ? 'R' : 'L';
+          targetSteps = computeSteps(diff);
+          currentSteps = 0;
+          moving = true;
+          Serial.print("Turning ");
+          Serial.print((dir == 'R') ? "right " : "left ");
+          Serial.print(diff);
+          Serial.println("°");
+        }
+      } else if (currentMillis - lastStepTime >= 2) {
+        char dir = (targetAngle < 90) ? 'R' : 'L';
+        stepMotors(dir);
+        currentSteps++;
+        lastStepTime = currentMillis;
+        if (currentSteps >= targetSteps) {
+          moving = false;
+          currentMode = DRIVE_FORWARD;
+          Serial.println("✅ Aligned to target.");
+        }
+      }
+    } else if (currentMode == DRIVE_FORWARD){
+      if (currentMillis - lastStepTime >= 2) {
+        stepMotors('F');
+        lastStepTime = currentMillis;
+      }
+      if (currentMillis - lastActionTime >= 100) {
+        lastDistance = getDistanceFromSensor();
+        Serial.print("Distance: ");
+        Serial.println(lastDistance);
+        lastActionTime = currentMillis;
+      }
+      if (lastDistance <= SAFE_DISTANCE && lastDistance > 0) {
+        Serial.println("🧱 Close to wall. Stopping and preparing to turn back.");
+        currentMode = TURN_BACK;
+        moving = false;
+      }
+    } else if (currentMode == TURN_BACK){
+      if (!moving) {
+        Serial.println("🔁 Turning back 180°...");
+        targetSteps = computeSteps(180);
+        currentSteps = 0;
+        moving = true;
+      }
+      if (moving && (currentMillis - lastStepTime >= 2)) {
+        stepMotors('R');
+        currentSteps++;
+        lastStepTime = currentMillis;
+        if (currentSteps >= targetSteps) {
+          moving = false;
+          currentMode = IDLE;
+          lastActionTime = currentMillis;
+          Serial.println("✅ Turn back done. Waiting...");
+        }
+      }
     }
   }
 }
