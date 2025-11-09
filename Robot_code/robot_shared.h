@@ -44,6 +44,7 @@ struct RobotShared {
   AF_Stepper* motorR;
   AF_Stepper* motorL;
   Servo_ESP8266* sensorServo;
+  bool* out;
 };
 
 // Single extern instance (defined/initialized in Robot_code.ino)

@@ -25,6 +25,10 @@
 #define servoPin D7
 #define sensorPin A0
 
+// === Identificador del robot ===
+const unsigned int id = 0x01; // ID único del robot
+bool outFlag = false; // flag auxiliar para modo especial
+
 // === Motores y servo ===
 AF_Stepper motorR(256, 1);    // Motor derecho
 AF_Stepper motorL(256, 2);    // Motor izquierdo
@@ -123,7 +127,6 @@ int targetAngle = 90;
 long currentSteps = 0;
 long targetSteps = 0;
 
-// === Uli ===
 // Helper functions moved to Robot_code/get_out/get_out.cpp
 // Initialize the robot shared struct so other translation units can access
 // the actual globals via the single extern `robot`.
@@ -150,7 +153,8 @@ RobotShared robot = {
   &WHEELS_AXIS_CM,
   &motorR,
   &motorL,
-  &sensorServo
+  &sensorServo,
+  &outFlag
 };
 
 // Movement helpers were moved to movement/movement.cpp
@@ -181,9 +185,8 @@ void loop() {
   // ----------------------
   // Punto de integración remoto
   // ----------------------
-  // float rxDist, rxAng;
-  // if ( getRemoteCommand(rxDist, rxAng) ) { // devuelve true si hay comando nuevo || bool getRemoteCommand(float &outDist, float &outAng)
-  //   processRemoteCommand(rxDist, rxAng);
+  // if ( getRemoteCommand(desiredDistanceCm, desiredHeading, outFlag, id) ) { // devuelve true si hay comando nuevo || bool getRemoteCommand(float& distanceCm, float& angleDeg, bool& outFlag, unsigned int robotId)
+  //   processRemoteCommand(desiredDistanceCm, desiredHeading, outFlag);
   // }
 
   // SERIAL_STUB: si está activado y TEST_MODE==0, leer línea desde Serial
