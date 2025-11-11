@@ -1,4 +1,3 @@
-```markdown
 # RingBots — Autonomous Robot Pushing Competition
 
 Short description
@@ -83,4 +82,3 @@ Notes:
 Maintainers / Authors
 ---------------------
 TODO
-```
