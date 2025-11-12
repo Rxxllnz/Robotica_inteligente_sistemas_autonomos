@@ -1,96 +1,89 @@
-// Include the header file for external references
-#include "movement.h"
-#include <DMotor_mod.h>
+#include "Movement.h"
 #include <math.h>
 
-// Convierte grados de giro a número de micro-pasos por rueda (rotación in-place)
-// Entrada:
-//  - angleDeg: ángulo de rotación (grados). Puede ser negativo para indicar
-//    sentido contrario.
-// Salida:
-//  - número de micro-pasos (long) que debe girar cada rueda para lograr el
-//    giro in-place pedido.
-// Nota: usa las constantes físicas (WHEEL_BASE_MM, WHEEL_DIAMETER_MM) y la
-// función stepsPerRevMicro() para calcular la resolución real de los steppers.
-long degreesToSteps(float angleDeg) {
+// Movement implementation
+// This module converts high-level commands (angles, distances)
+// into low-level step counts and updates the movement-related
+// state stored in MovementContext. The computations use basic
+// wheel geometry and the provided steps-per-revolution function.
+
+Movement::Movement(MovementContext* ctx) : ctx(ctx) {}
+
+// Convert an in-place rotation (degrees) into the number of micro-steps
+// each wheel needs to perform. The approach is:
+//  1) compute the arc length each wheel travels for the rotation
+//  2) convert arc length to wheel rotations
+//  3) convert rotations to micro-steps using stepsPerRevMicro()
+long Movement::degreesToSteps(float angleDeg) {
 	float angle = fabs(angleDeg);
-	// Longitud del arco que recorre cada rueda (mm)
-	float arc_mm = (PI * (*robot.WHEEL_BASE_MM)) * (angle / 360.0);
-	// vueltas de rueda necesarias
-	float rotations = arc_mm / (PI * (*robot.WHEEL_DIAMETER_MM));
-	float steps = rotations * (float)robot.stepsPerRevMicro();
+	// arc length per wheel in mm
+	float arc_mm = (PI * (*ctx->WHEEL_BASE_MM)) * (angle / 360.0);
+	// wheel rotations required
+	float rotations = arc_mm / (PI * (*ctx->WHEEL_DIAMETER_MM));
+	// convert rotations to micro-steps
+	float steps = rotations * (float)ctx->stepsPerRevMicro();
 	return (long)(steps + 0.5);
 }
 
-// Convierte distancia en cm a pasos por rueda (avance linear)
-// Convierte una distancia (cm) en pasos de microstepping por rueda.
-// Entrada:
-//  - distCm: distancia a recorrer en centímetros (lineal).
-// Salida:
-//  - número de micro-pasos por rueda necesarios para desplazar el robot
-long distanceCmToSteps(float distCm) {
+// Convert a forward distance (cm) to micro-steps.
+long Movement::distanceCmToSteps(float distCm) {
 	float dist_mm = distCm * 10.0;
-	float rotations = dist_mm / (PI * (*robot.WHEEL_DIAMETER_MM));
-	float steps = rotations * (float)robot.stepsPerRevMicro();
+	float rotations = dist_mm / (PI * (*ctx->WHEEL_DIAMETER_MM));
+	float steps = rotations * (float)ctx->stepsPerRevMicro();
 	return (long)(steps + 0.5);
 }
 
-// Normaliza la diferencia entre dos headings a un rango de [-180, 180] grados.
-// Util: para elegir el giro más corto entre dos orientaciones.
-float shortestAngle(float fromDeg, float toDeg) {
+// Compute shortest signed angle difference between two headings.
+float Movement::shortestAngle(float fromDeg, float toDeg) {
 	float d = toDeg - fromDeg;
 	while (d > 180.0) d -= 360.0;
 	while (d < -180.0) d += 360.0;
 	return d;
 }
 
-// ------------------------------------------------------------------
-// Procesa un comando remoto (distancia y ángulo) y prepara la máquina de
-// estados para ejecutar la maniobra.
-// - distCm: distancia objetivo en centímetros (si 0, no avanzar)
-// - angleDeg: valor del giro solicitado (grados, puede ser positivo/negativo)
-// - out: flag auxiliar (p.e. 1 para modo especial TURN_180)
-// Efectos secundarios:
-//  - actualiza campos en `robot` (desiredDistanceCm, desiredHeading, etc.)
-//  - ajusta `currentMode`, `targetSteps*`, `dir*` y resets de `doneSteps*`.
-
-void processRemoteCommand(float distCm, float angleDeg, float out) {
+// Process a remote command that requests rotation and/or forward
+// motion. This method writes into the MovementContext so the
+// non-blocking main loop will execute the steps.
+void Movement::processRemoteCommand(float distCm, float angleDeg, float out) {
 	if (out == 1) {
-		// Modo especial: forzar un giro de 180° (ejemplo de comando remoto)
+		// Special remote flag: request a 180-degree turn.
 		Serial.print(out);
 		currentMode = TURN_180;
+		return;
+	}
+
+	// Store requested forward distance
+	*ctx->desiredDistanceCm = distCm;
+
+	// Requested rotation (signed degrees). Compute target absolute
+	// heading and normalize to [0,360).
+	float dAng = angleDeg;
+	*ctx->desiredHeading = fmod((*ctx->currentHeading) + dAng, 360.0);
+	if (*ctx->desiredHeading < 0) *ctx->desiredHeading += 360.0;
+
+	// Determine rotation steps and prepare wheel targets/directions.
+	long rotSteps = degreesToSteps(dAng);
+	if (rotSteps > 0) {
+		// Configure an in-place rotation: wheels move in opposite
+		// directions so the robot pivots around its center.
+		if (dAng > 0) { *ctx->dirR = BACKWARD; *ctx->dirL = FORWARD; }
+		else { *ctx->dirR = FORWARD; *ctx->dirL = BACKWARD; }
+		*ctx->targetStepsR = rotSteps; *ctx->targetStepsL = rotSteps;
+		*ctx->doneStepsR = 0; *ctx->doneStepsL = 0;
+		currentMode = ROTATING;
+		Serial.print("[REMOTE] Prepared ROTATE steps="); Serial.println(rotSteps);
+		return;
+	}
+
+	// No rotation needed; prepare forward movement instead.
+	long moveSteps = distanceCmToSteps(*ctx->desiredDistanceCm);
+	if (moveSteps > 0) {
+		*ctx->dirR = FORWARD; *ctx->dirL = FORWARD;
+		*ctx->targetStepsR = moveSteps; *ctx->targetStepsL = moveSteps;
+		*ctx->doneStepsR = 0; *ctx->doneStepsL = 0;
+		currentMode = MOVING;
+		Serial.print("[REMOTE] Prepared MOVE steps="); Serial.println(moveSteps);
 	} else {
-		// Guardar pedido de distancia
-		*robot.desiredDistanceCm = distCm;
-
-		// El ángulo recibido es directamente cuánto girar
-		float dAng = angleDeg;
-		// Calcular heading absoluto deseado (normalizado 0..360)
-		*robot.desiredHeading = fmod((*robot.currentHeading) + dAng, 360.0);
-		if (*robot.desiredHeading < 0) *robot.desiredHeading += 360.0;
-		long rotSteps = degreesToSteps(dAng);
-
-		if (rotSteps > 0) {
-			// Preparar rotación in-place: ruedas en sentidos opuestos
-			if (dAng > 0) { *robot.dirR = BACKWARD; *robot.dirL = FORWARD; }
-			else { *robot.dirR = FORWARD; *robot.dirL = BACKWARD; }
-			*robot.targetStepsR = rotSteps; *robot.targetStepsL = rotSteps;
-			*robot.doneStepsR = 0; *robot.doneStepsL = 0;
-			currentMode = ROTATING;
-			Serial.print("[REMOTE] Preparado ROTATE pasos="); Serial.println(rotSteps);
-		} else {
-			// Ya orientado: preparar avance
-			long moveSteps = distanceCmToSteps(*robot.desiredDistanceCm);
-			if (moveSteps > 0) {
-				*robot.dirR = FORWARD; *robot.dirL = FORWARD;
-				*robot.targetStepsR = moveSteps; *robot.targetStepsL = moveSteps;
-				*robot.doneStepsR = 0; *robot.doneStepsL = 0;
-				currentMode = MOVING;
-				Serial.print("[REMOTE] Preparado MOVE pasos="); Serial.println(moveSteps);
-			} else {
-				currentMode = IDLE;
-			}
-		}
+		currentMode = IDLE;
 	}
 }
-
