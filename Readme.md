@@ -1,4 +1,4 @@
-% RingBots — Autonomous Robot Pushing Competition
+# RingBots — Autonomous Robot Pushing Competition
 
 RingBots is an educational project that implements autonomous robots competing inside a ring arena. The goal of this repository is to provide firmware and helper modules for the robot units; vision processing (camera, detection and pose estimation) is implemented in a separate repository which sends high-level commands to the robots.
 
