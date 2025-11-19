@@ -19,23 +19,30 @@
 // Movement helper (class)
 #include "movement/Movement.h"
 // GetOut helper (class)
-#include "get_out/GetOut.h"
+#include "get_out/get_out.h"
 // Context definitions used to pass dependencies to helpers
 #include "robot_shared.h"
+// Slave helper (class)
+#include "SlaveComm/SlaveComm.h"
 
 // For Arduino build, include implementation .cpp files directly to
 // ensure the IDE compiles them together as the original sketch did.
 #include "movement/Movement.cpp"
-#include "get_out/GetOut.cpp"
+#include "get_out/get_out.cpp"
+#include "SlaveComm/SlaveComm.cpp"
 
 // === Pins ===
 #define ledPin D0
 #define servoPin D7
 #define sensorPin A0
 
+
+
+
 // === Robot identifier and flags ===
-const unsigned int id = 0x01; // unique robot id 
+const int id = 1; // unique robot id 
 bool outFlag = false; // auxiliary flag for special modes
+uint8_t masterMAC[] = {0xA4,0xCF,0x12,0xF5,0x20,0x53}; // MAC address of the master device
 
 // === Motors and servo ===
 // Right and left stepper motor controller objects, and the servo
@@ -55,13 +62,15 @@ int baseSpeed = 100;          // base speed setting for steppers
 // periodic motor step events without blocking the main loop.
 unsigned long previousMillisSensor = 0;
 unsigned long previousMillisMotors = 0;
+unsigned long previousMillisCom = 0;
 const unsigned long intervalSensor = 50;  // sensor read interval (ms)
+const unsigned long intervalCom = 5000;     // communication check interval (ms)
 unsigned long motorDelay = 1;            // delay between micro-steps (smaller = faster)
 
 // === Test mode configuration ===
 // When TEST_MODE is enabled, the sketch feeds a predefined set of
 // commands to the movement subsystem for automated testing.
-#define TEST_MODE 1
+#define TEST_MODE 0
 
 const unsigned long testAutoInterval = 10000; // ms between automatic test commands
 bool testAutoRun = true; // if true, test commands run automatically on a timer
@@ -176,6 +185,9 @@ SensorContext sensorCtx = {
 // Crear instancias de las clases usando los contexts apropiados
 Movement mover(&movementCtx);
 GetOut getout(&sensorCtx);
+SlaveComm slave;
+
+
 
 // Initialize hardware and modules. Attach servos, configure motor
 // speeds and initialize any test timers used when TEST_MODE is enabled.
@@ -198,10 +210,25 @@ void setup() {
     Serial.println("*** TEST_MODE enabled: using built-in command list (auto-run) ***");
     Serial.print("Auto-run interval (ms): "); Serial.println(testAutoInterval);
   #endif
+
+  // Initialize SlaveComm and set robot ID
+  slave.setID(0);
+  slave.setMasterMACAddress(masterMAC);
+  slave.begin("OPPO A53", "611b10a883c5"); // WiFi credentials for ESP-NOW
 }
 
 void loop() {
   unsigned long currentMillis = millis();
+
+
+  if (currentMillis - previousMillisCom >= intervalCom) {
+    Serial.println("Angulo: " + String(slave.getAngle()));
+    Serial.println("Distancia: " + String(slave.getDistance()));
+    Serial.println("Out: " + String(slave.getOut()));
+    previousMillisCom = currentMillis;
+    mover.processRemoteCommand(slave.getDistance(), slave.getAngle(), slave.getOut());
+    
+  }
 
   #if TEST_MODE
     // Test mode: periodically feed a predefined command sequence to the

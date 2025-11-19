@@ -1,4 +1,4 @@
-#include "GetOut.h"
+#include "get_out.h"
 #include <math.h>
 
 GetOut::GetOut(SensorContext* ctx) : ctx(ctx) {}
