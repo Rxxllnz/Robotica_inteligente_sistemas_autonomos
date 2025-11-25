@@ -23,13 +23,13 @@
 // Context definitions used to pass dependencies to helpers
 #include "robot_shared.h"
 // Slave helper (class)
-#include "SlaveComm/SlaveComm.h"
+#include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.h"
 
 // For Arduino build, include implementation .cpp files directly to
 // ensure the IDE compiles them together as the original sketch did.
 #include "movement/Movement.cpp"
 #include "get_out/get_out.cpp"
-#include "SlaveComm/SlaveComm.cpp"
+#include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.cpp"
 
 // === Pins ===
 #define ledPin D0
@@ -212,7 +212,7 @@ void setup() {
   #endif
 
   // Initialize SlaveComm and set robot ID
-  slave.setID(0);
+  slave.setID(id);
   slave.setMasterMACAddress(masterMAC);
   slave.begin("OPPO A53", "611b10a883c5"); // WiFi credentials for ESP-NOW
 }
@@ -220,12 +220,10 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-
-  if (currentMillis - previousMillisCom >= intervalCom) {
+  if (slave.dataChanged()) {
     Serial.println("Angulo: " + String(slave.getAngle()));
     Serial.println("Distancia: " + String(slave.getDistance()));
-    Serial.println("Out: " + String(slave.getOut()));
-    previousMillisCom = currentMillis;
+    Serial.println("Out: " + String(slave.getOut())); 
     mover.processRemoteCommand(slave.getDistance(), slave.getAngle(), slave.getOut());
     
   }
