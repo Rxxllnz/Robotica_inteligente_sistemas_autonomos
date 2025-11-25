@@ -228,6 +228,9 @@ void loop() {
     
   }
 
+  if (mover.getGetOutMode() == true ) {digitalWrite(ledPin, HIGH);} 
+  else {digitalWrite(ledPin, LOW);}
+
   #if TEST_MODE
     // Test mode: periodically feed a predefined command sequence to the
     // movement subsystem. This keeps the control flow exercised when
@@ -250,6 +253,57 @@ void loop() {
       if (testIndex >= TEST_CMD_COUNT) testIndex = 0;
     }
   #endif
+
+  #if SERIAL_STUB && !TEST_MODE
+  // SERIAL_STUB: if enabled and TEST_MODE==0, read lines from Serial
+  // and call processRemoteCommand(dist, angle, out).
+  static String serialBuf = "";
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == '\r') continue; // ignore CR
+    if (c == '\n') {
+      String line = serialBuf;
+      serialBuf = "";
+      line.trim();
+      if (line.length() > 0) {
+        // normalize separators
+        line.replace(',', ' ');
+        line.replace('D', ' ');
+        line.replace('d', ' ');
+        line.replace('A', ' ');
+        line.replace('a', ' ');
+        // tokenize
+        float vals[3]; int cnt = 0;
+        int i = 0;
+        while (i < line.length() && cnt < 3) {
+          while (i < line.length() && isSpace(line[i])) i++;
+          if (i >= line.length()) break;
+          int j = i;
+          while (j < line.length() && !isSpace(line[j])) j++;
+          String tok = line.substring(i, j);
+          char buf[32]; tok.toCharArray(buf, sizeof(buf));
+          vals[cnt++] = atof(buf);
+          i = j;
+        }
+        if (cnt == 3) {
+          float rxDist = vals[0];
+          float rxAng = vals[1];
+          float out = vals[2];
+          Serial.print("[STUB] Recibido: "); Serial.print(rxDist); Serial.print(" cm, "); Serial.print(rxAng); Serial.println(" deg");
+          processRemoteCommand(rxDist, rxAng, out);
+          Serial.println("[STUB] ACK");
+        } else {
+          Serial.print("[STUB] Formato inválido: '"); Serial.print(line); Serial.println("' (usar: '<dist_cm> <angle_deg>' )");
+        }
+      }
+    } else {
+      serialBuf += c;
+      // limit length to avoid overflow
+      if (serialBuf.length() > 200) serialBuf = serialBuf.substring(serialBuf.length()-200);
+    }
+  }
+#endif
+
 
   // Stepping state machine: run periodic motor-step updates and the
   // high-level behavior state machine. This section is intentionally
@@ -390,6 +444,7 @@ void loop() {
         lastStepTime = currentMillis;
         if (currentSteps >= targetSteps) {
           moving = false;
+          mover.setGetOutMode(false);
           currentMode = IDLE;
           lastActionTime = currentMillis;
           Serial.println("✅ Turn back done. Waiting...");

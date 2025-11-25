@@ -45,10 +45,24 @@ float Movement::shortestAngle(float fromDeg, float toDeg) {
 // motion. This method writes into the MovementContext so the
 // non-blocking main loop will execute the steps.
 void Movement::processRemoteCommand(float distCm, float angleDeg, float out) {
-	if (out == 1) {
+	// Handle special "out" flag: request a 180-degree turn.
+	// Only trigger on the rising edge of the flag and if not
+	// already turning and is moving or rotating.
+	if (out == 1 and currentMode != IDLE and not lastOutFlag and not getoutMode) {
+		lastOutFlag = true; 
+		getoutMode = true;
+		Serial.println("[REMOTE] Get-out command received.");
 		// Special remote flag: request a 180-degree turn.
 		Serial.print(out);
 		currentMode = TURN_180;
+		return;
+	}
+
+	lastOutFlag = (out == 1);
+
+	if (getoutMode) {
+		// Ignore other commands while in get-out mode.
+		Serial.println("[REMOTE] Ignoring command while in get-out mode.");
 		return;
 	}
 

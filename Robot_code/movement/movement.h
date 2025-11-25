@@ -40,8 +40,13 @@ public:
   // via the MovementContext so the main loop can act on them.
   void processRemoteCommand(float distCm, float angleDeg, float out);
 
+  void setGetOutMode(bool mode) { getoutMode = mode;}
+  bool getGetOutMode() { return getoutMode; }
+
 private:
   MovementContext* ctx; // non-owning pointer to movement-related fields
+  bool lastOutFlag = false; // track last out-flag state
+  bool getoutMode = false; // track if in get-out mode
 };
 
 #endif // MOVEMENT_H
