@@ -37,8 +37,6 @@
 #define sensorPin A0
 
 
-
-
 // === Robot identifier and flags ===
 const int id = 1; // unique robot id 
 bool outFlag = false; // auxiliary flag for special modes
@@ -75,8 +73,6 @@ unsigned long motorDelay = 1;            // delay between micro-steps (smaller =
 const unsigned long testAutoInterval = 10000; // ms between automatic test commands
 bool testAutoRun = true; // if true, test commands run automatically on a timer
 
-#define SERIAL_STUB 0
-
 const int TEST_CMD_COUNT = 6;
 float testCommands[TEST_CMD_COUNT][3] = {
   {30.0, 0.0, 0.0},
@@ -88,6 +84,11 @@ float testCommands[TEST_CMD_COUNT][3] = {
 };
 int testIndex = 0;
 unsigned long previousMillisTest = 0;
+
+// === Serial stub configuration ===
+// When SERIAL_STUB is enabled (and TEST_MODE is disabled), the sketch
+// reads commands from the Serial input instead of ESP-NOW.
+#define SERIAL_STUB 1 
 
 // === Robot geometry parameters ===
 // Wheel and chassis geometry used in step/angle computations.
@@ -134,7 +135,7 @@ const float SAFE_DISTANCE = 27.0; // minimum safe distance (cm) before stopping
 const int SCAN_ANGLES[] = {0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180};
 const int NUM_SCAN_ANGLES = sizeof(SCAN_ANGLES) / sizeof(SCAN_ANGLES[0]);
 
-// --- Movement tracking ---
+// === Movement tracking ===
 // Non-blocking state used by higher-level maneuvers (scan/turn/drive).
 bool moving = false;
 unsigned long lastActionTime = 0;
@@ -147,7 +148,8 @@ int targetAngle = 90;
 long currentSteps = 0;
 long targetSteps = 0;
 
-// Crear contexts especializados en vez de un RobotShared monolítico
+// === Context structures ===
+// MovementContext and SensorContext instances that hold pointers
 MovementContext movementCtx = {
   stepsPerRevMicro,
   &WHEEL_BASE_MM,
@@ -182,17 +184,21 @@ SensorContext sensorCtx = {
   &stepToMicrostep
 };
 
-// Crear instancias de las clases usando los contexts apropiados
+// === Helper module instances ===
+// Movement and GetOut helper objects, initialized with
+// non-owning pointers to their context structures.
 Movement mover(&movementCtx);
 GetOut getout(&sensorCtx);
 SlaveComm slave;
 
 
-
+// === Setup function ===
 // Initialize hardware and modules. Attach servos, configure motor
 // speeds and initialize any test timers used when TEST_MODE is enabled.
 void setup() {
   Serial.begin(115200);
+  while (!Serial) { ; } // wait for serial port to connect
+  delay(5000); // give some time for serial monitor to open
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
 
@@ -203,7 +209,7 @@ void setup() {
   // Configure stepper base speed
   motorR.setSpeed(baseSpeed);
   motorL.setSpeed(baseSpeed);
-
+  
   #if TEST_MODE
     // Initialize automatic test command timer and inform via serial
     previousMillisTest = millis();
@@ -211,12 +217,22 @@ void setup() {
     Serial.print("Auto-run interval (ms): "); Serial.println(testAutoInterval);
   #endif
 
-  // Initialize SlaveComm and set robot ID
-  slave.setID(id);
-  slave.setMasterMACAddress(masterMAC);
-  slave.begin("OPPO A53", "611b10a883c5"); // WiFi credentials for ESP-NOW
+  #if SERIAL_STUB && !TEST_MODE
+    Serial.println("*** SERIAL_STUB enabled: reading commands from Serial ***");
+    Serial.println("Format: '<distance_cm> <angle_deg> <out_flag>' (e.g., '30 90 0')");
+  #endif
+  Serial.println("Prueba de Robot Código Iniciado");
+
+  #if !SERIAL_STUB && !TEST_MODE
+    Serial.println("*** NORMAL MODE: waiting for remote commands via ESP-NOW ***");
+    // Initialize SlaveComm and set robot ID
+    slave.setID(id);
+    slave.setMasterMACAddress(masterMAC);
+    slave.begin("OPPO A53", "611b10a883c5"); // WiFi credentials for ESP-NOW
+  #endif
 }
 
+// === Main loop function ===
 void loop() {
   unsigned long currentMillis = millis();
 
@@ -289,8 +305,8 @@ void loop() {
           float rxDist = vals[0];
           float rxAng = vals[1];
           float out = vals[2];
-          Serial.print("[STUB] Recibido: "); Serial.print(rxDist); Serial.print(" cm, "); Serial.print(rxAng); Serial.println(" deg");
-          processRemoteCommand(rxDist, rxAng, out);
+          Serial.print("[STUB] Recibido: "); Serial.print(rxDist); Serial.print(" cm, "); Serial.print(rxAng); Serial.println(" deg"); Serial.print("       Out: "); Serial.println(out);
+          mover.processRemoteCommand(rxDist, rxAng, out);
           Serial.println("[STUB] ACK");
         } else {
           Serial.print("[STUB] Formato inválido: '"); Serial.print(line); Serial.println("' (usar: '<dist_cm> <angle_deg>' )");
