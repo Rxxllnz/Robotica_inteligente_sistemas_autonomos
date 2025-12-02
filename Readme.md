@@ -72,6 +72,23 @@ Notes
 - The sketch enables `TEST_MODE` by default. Disable it for real competition and provide remote command input instead.
 - The Arduino IDE compiles `movement.cpp` and `get_out.cpp` because they are `#include`d by the sketch. If you reorganize files, ensure the translation units are compiled or convert them into a library for cleaner builds.
 
+Additional recent changes
+------------------------
+- Communications subrepository: The project now includes a subrepository used to provide the Master/Slave communication code. The subrepo contents are included under `COMUNICACIONES_ROBOT/` and provide the `MasterComm` and `SlaveComm` modules used by the sketch.
+
+- Master vs Slave role: If the board you are flashing should act as the master device, enable the master role flag in the sketch before uploading. Look for the role/configuration flag in `Robot_code/Robot_code.ino` or the communication helper files under `COMUNICACIONES_ROBOT/` and set the appropriate variable/define for `master`. This toggles whether the device initializes as a master or a slave and which communication paths it uses.
+
+- Disabling TEST_MODE and SERIAL_STUB: By default the sketch compiles with `TEST_MODE` enabled so the built-in test command sequence runs. To disable testing and the serial stub behavior for normal operation, open `Robot_code/Robot_code.ino` and set:
+
+  - `#define TEST_MODE 0`  // disable built-in automatic test sequence
+  - `#define SERIAL_STUB 0` // ensure the serial command stub is disabled
+
+  After changing those defines, recompile and upload. In normal operation the sketch will then wait for remote commands (ESP-NOW or your chosen transport) instead of auto-running the test command list or listening for stubbed serial input.
+
+Troubleshooting
+---------------
+- If you don't see early `Serial.println` output after upload, open the Serial Monitor at `115200` and reset the board (some boards only open the serial console after reset).
+
 Development notes
 -----------------
 - The code uses context structs (`MovementContext`, `SensorContext`) so modules receive only the dependencies they need. This reduces coupling and clarifies ownership.
