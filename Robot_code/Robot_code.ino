@@ -35,22 +35,19 @@
 #define servoPin D7
 #define sensorPin A0
 
+// === Master/Slave role configuration ===
+// Set to 1 for master device, 0 for slave device.
 #define Master 1
 
-#if not Master
-  // Slave helper (class)
-  #include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.h"
-  #include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.cpp"
+// === Serial stub configuration ===
+// When SERIAL_STUB is enabled (and TEST_MODE is disabled), the sketch
+// reads commands from the Serial input instead of ESP-NOW.
+#define SERIAL_STUB 0
 
-  uint8_t masterMAC[] = {0x68,0xC6,0x3A,0x9F,0x98,0x65}; // MAC address of the master device
-#elif Master
-  // Master helper (class)
-  #include "COMUNICACIONES_ROBOT/MasterComm/src/MasterComm.h"
-  #include "COMUNICACIONES_ROBOT/MasterComm/src/MasterComm.cpp"
-
-  uint8_t robot1[] = {0xCC,0x50,0xE3,0x55,0x09,0x6A};
-  uint8_t robot2[] = {0x5C,0xCF,0x7F,0x01,0x65,0x6B};
-#endif
+// === Test mode configuration ===
+// When TEST_MODE is enabled, the sketch feeds a predefined set of
+// commands to the movement subsystem for automated testing.
+#define TEST_MODE 0
 
 // === Robot identifier and flags ===
 const int id = 0; // unique robot id 
@@ -70,39 +67,43 @@ int stepToMicrostep = 8;      // microsteps per full step
 int baseSpeed = 100;          // base speed setting for steppers
 
 // === Timing variables ===
-// Non-blocking timing counters used to schedule sensor reads and
-// periodic motor step events without blocking the main loop.
-unsigned long previousMillisSensor = 0;
+// motor stepping timing
 unsigned long previousMillisMotors = 0;
-unsigned long previousMillisCom = 0;
-const unsigned long intervalSensor = 50;  // sensor read interval (ms)
-const unsigned long intervalCom = 5000;     // communication check interval (ms)
 unsigned long motorDelay = 1;            // delay between micro-steps (smaller = faster)
 
+// === Master/Slave role configuration ===
+#if not Master
+  // Slave helper (class)
+  #include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.h"
+  #include "COMUNICACIONES_ROBOT/SlaveComm/src/SlaveComm.cpp"
+
+  uint8_t masterMAC[] = {0x68,0xC6,0x3A,0x9F,0x98,0x65}; // MAC address of the master device
+#elif Master
+  // Master helper (class)
+  #include "COMUNICACIONES_ROBOT/MasterComm/src/MasterComm.h"
+  #include "COMUNICACIONES_ROBOT/MasterComm/src/MasterComm.cpp"
+
+  uint8_t robot1[] = {0xCC,0x50,0xE3,0x55,0x09,0x6A};
+  uint8_t robot2[] = {0x5C,0xCF,0x7F,0x01,0x65,0x6B};
+#endif
+
 // === Test mode configuration ===
-// When TEST_MODE is enabled, the sketch feeds a predefined set of
-// commands to the movement subsystem for automated testing.
-#define TEST_MODE 0
 
 const unsigned long testAutoInterval = 10000; // ms between automatic test commands
 bool testAutoRun = true; // if true, test commands run automatically on a timer
 
-const int TEST_CMD_COUNT = 6;
+const int TEST_CMD_COUNT = 7;
 float testCommands[TEST_CMD_COUNT][3] = {
   {30.0, 0.0, 0.0},
   {20.0, 90.0, 0.0},
   {15.0, 180.0, 0.0},
   {10.0, 270.0, 0.0},
   {5.0, 45.0, 0.0},
-  {0.0, 0.0, 1.0}
+  {0.0, 0.0, 1.0},
+  {25.0, 50.0, 1.0}
 };
 int testIndex = 0;
 unsigned long previousMillisTest = 0;
-
-// === Serial stub configuration ===
-// When SERIAL_STUB is enabled (and TEST_MODE is disabled), the sketch
-// reads commands from the Serial input instead of ESP-NOW.
-#define SERIAL_STUB 0
 
 // === Robot geometry parameters ===
 // Wheel and chassis geometry used in step/angle computations.
@@ -110,8 +111,9 @@ const float WHEEL_RADIUS_CM = 3.2;      // wheel radius (cm)
 const float WHEELS_AXIS_CM = 16.0;      // distance between wheel centers (cm)
 const float WHEEL_DIAMETER_MM = WHEEL_RADIUS_CM * 2.0 * 10.0; // convert cm to mm
 const float WHEEL_BASE_MM = WHEELS_AXIS_CM * 10.0;          // convert cm to mm
-float twoPi = 2 * 3.1416;
 
+// === Movement state variables ===
+// Steps-per-revolution function used by Movement module.
 int stepperResolution = 256;  // 8 bits, corresponde al primer parámetro de AF_Stepper
 long stepsPerRevMicro() { return (long)stepperResolution * (long)stepToMicrostep; }
 
