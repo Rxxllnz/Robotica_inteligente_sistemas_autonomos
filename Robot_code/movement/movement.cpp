@@ -77,7 +77,7 @@ void Movement::processRemoteCommand(float distCm, float angleDeg, float out) {
 
 	// Determine rotation steps and prepare wheel targets/directions.
 	long rotSteps = degreesToSteps(dAng);
-	if (rotSteps > 0) {
+	if (rotSteps > 60 and not out) {
 		// Configure an in-place rotation: wheels move in opposite
 		// directions so the robot pivots around its center.
 		if (dAng > 0) { *ctx->dirR = BACKWARD; *ctx->dirL = FORWARD; }
@@ -91,7 +91,7 @@ void Movement::processRemoteCommand(float distCm, float angleDeg, float out) {
 
 	// No rotation needed; prepare forward movement instead.
 	long moveSteps = distanceCmToSteps(*ctx->desiredDistanceCm);
-	if (moveSteps > 0) {
+	if (moveSteps > 0 and not out) {
 		*ctx->dirR = FORWARD; *ctx->dirL = FORWARD;
 		*ctx->targetStepsR = moveSteps; *ctx->targetStepsL = moveSteps;
 		*ctx->doneStepsR = 0; *ctx->doneStepsL = 0;
