@@ -4,7 +4,7 @@ RingBots is an educational project that implements autonomous robots competing i
 
 Status
 ------
-Active development. Several hardware-specific details and the external vision repository link are still TODO. The firmware includes a built-in `TEST_MODE` to support offline testing on a single board.
+Active development. The firmware includes a built-in `TEST_MODE` to support offline testing on a single board and a `SERIAL_STUB`.
 
 Repository layout
 -----------------
@@ -14,16 +14,15 @@ Repository layout
   - `movement/` — movement utilities and kinematic conversions
   - `robot_shared.h` — lightweight context structs used to pass dependencies into modules
   - `robot_state.h` — `RobotMode` enum used by the main loop
-- `movement_v1/` — legacy/experimental movement sketch
-- `Sensores-actuadores/` — individual sensor/actuator examples
+- `COMUNICACIONES_ROBOT/` — communication helpers for Master/Slave ESPs (subrepository)
 
 Hardware overview (fill in exact models)
 ---------------------------------------
-- MCU: ESP8266 or ESP32 (select appropriate board core in Arduino IDE)
-- Steppers: stepper driver and motor model (TBD)
-- Servo: model used to sweep the distance sensor (TBD)
+- MCU: ESP8266 (select appropriate board core in Arduino IDE)
+- Steppers: stepper driver and motor model
+- Servo: model used to sweep the distance sensor 
 - Distance sensor: analog sensor with a calibration table included in code
-- Power: battery and power distribution (TBD)
+- Power: battery and power distribution
 
 Pins used by the firmware
 -------------------------
@@ -42,9 +41,9 @@ Key configuration values
 High-level architecture
 -----------------------
 1. External vision system (separate repository) processes camera frames and computes robot poses.
-2. Vision → Master ESP: vision transmits poses/commands (planned transport: UDP).
+2. Vision → Master ESP: vision transmits poses/commands (transport: UDP).
 3. Master ESP forwards high-level commands to robot ESPs.
-4. Robot ESPs (this repo) execute a non-blocking state machine (scan, align, drive) and perform low-level stepping and safety checks.
+4. Robot ESPs (this repo) execute a non-blocking state machine (scan, align, drive), use the commands received and perform low-level stepping and safety checks.
 
 Firmware behaviour and modes
 ---------------------------
@@ -52,25 +51,31 @@ Firmware behaviour and modes
 - Servo scans and linear interpolation are used to map analog readings to distances using a calibration table.
 - Movement calculations convert distances and angles into micro-step counts using wheel geometry and a function that returns steps per revolution.
 
+Diferents modes:
+- `TEST_MODE`: When enabled, the robot runs a predefined sequence of commands for testing without external input.
+- `SERIAL_STUB`: When enabled, the robot listens for serial commands to simulate remote control.
+
 Quickstart — build & flash (Arduino IDE)
 --------------------------------------
 Prerequisites:
 - Arduino IDE (or PlatformIO)
-- Board core for the chosen ESP (ESP8266/ESP32)
+- Board core for the chosen ESP (ESP8266)
 - USB drivers
 - Required libraries: `DMotor_mod`, `Servo_ESP8266`, `AF_Stepper` (verify versions and compatibility)
 
 Steps:
-1. Open `Robot_code/Robot_code.ino` in the Arduino IDE.
-2. Select board and port (Tools → Board, Tools → Port).
-3. Verify / Compile.
-4. Upload to the board.
-5. Open the Serial Monitor at `115200` baud to view runtime logs.
+1. Clone the repository.
+2. Open the Arduino IDE.
+3. Open `Robot_code/Robot_code.ino` in the Arduino IDE.
+4. Select board and port (Tools → Board, Tools → Port).
+5. Verify / Compile.
+6. Upload to the board.
+7. Open the Serial Monitor at `115200` baud to view runtime logs.
 
 Notes
 -----
-- The sketch enables `TEST_MODE` by default. Disable it for real competition and provide remote command input instead.
-- The Arduino IDE compiles `movement.cpp` and `get_out.cpp` because they are `#include`d by the sketch. If you reorganize files, ensure the translation units are compiled or convert them into a library for cleaner builds.
+- The sketch have `TEST_MODE` and `SERIAL_STUB`. Disable it for real competition and provide remote command input instead.
+- The Arduino IDE compiles `movement.cpp`, `get_out.cpp` and other .cpp files because they are `#include`d by the sketch. If you reorganize files, ensure the translation units are compiled or convert them into a library for cleaner builds.
 
 Additional recent changes
 ------------------------
@@ -78,7 +83,7 @@ Additional recent changes
 
 - Master vs Slave role: If the board you are flashing should act as the master device, enable the master role flag in the sketch before uploading. Look for the role/configuration flag in `Robot_code/Robot_code.ino` or the communication helper files under `COMUNICACIONES_ROBOT/` and set the appropriate variable/define for `master`. This toggles whether the device initializes as a master or a slave and which communication paths it uses.
 
-- Disabling TEST_MODE and SERIAL_STUB: By default the sketch compiles with `TEST_MODE` enabled so the built-in test command sequence runs. To disable testing and the serial stub behavior for normal operation, open `Robot_code/Robot_code.ino` and set:
+- Disabling TEST_MODE and SERIAL_STUB: To disable testing and the serial stub behavior for normal operation, open `Robot_code/Robot_code.ino` and set:
 
   - `#define TEST_MODE 0`  // disable built-in automatic test sequence
   - `#define SERIAL_STUB 0` // ensure the serial command stub is disabled
