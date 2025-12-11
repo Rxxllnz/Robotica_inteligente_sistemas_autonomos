@@ -70,6 +70,8 @@ int baseSpeed = 100;          // base speed setting for steppers
 // motor stepping timing
 unsigned long previousMillisMotors = 0;
 unsigned long motorDelay = 1;            // delay between micro-steps (smaller = faster)
+unsigned long lastMillisCom = 0;
+unsigned long comDelay = 1000;            // delay between communication checks
 
 // === Master/Slave role configuration ===
 #if not Master
@@ -250,12 +252,12 @@ void setup() {
       // Initialize SlaveComm and set robot ID
       slave.setID(id);
       slave.setMasterMACAddress(masterMAC);
-      slave.begin("OPPO A53", "611b10a883c5"); // WiFi credentials for ESP-NOW
+      slave.begin("Raulordenador", "SistemasEmbebidos"); // WiFi credentials for ESP-NOW ("OPPO A53", "611b10a883c5")
       Serial.println("ESCLAVO listo");
     #elif Master
       master.addRobotMAC(robot1);
       master.addRobotMAC(robot2);
-      master.begin("OPPO A53", "611b10a883c5", 8888);
+      master.begin("Raulordenador", "SistemasEmbebidos", 8888);
       master.enableBroadcastIP("255.255.255.255");
       Serial.println("MAESTRO listo");
     #endif
@@ -266,27 +268,30 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-  #if Master
-    // Read incoming ESP-NOW messages
-    master.readUDP();
+  if (currentMillis - lastMillisCom >= comDelay) {
+    lastMillisCom = currentMillis;
+    #if Master
+      // Read incoming ESP-NOW messages
+      master.readUDP();
 
-    if (master.dataChanged()) {
-    Serial.println("Angulo: " + String(master.getAngle()));
-    Serial.println("Distancia: " + String(master.getDistance()));
-    Serial.println("Out: " + String(master.getOut())); 
-    mover.processRemoteCommand(master.getDistance(), master.getAngle(), master.getOut());
-    
-  }
-  #elif not Master
-
-    if (slave.dataChanged()) {
-      Serial.println("Angulo: " + String(slave.getAngle()));
-      Serial.println("Distancia: " + String(slave.getDistance()));
-      Serial.println("Out: " + String(slave.getOut())); 
-      mover.processRemoteCommand(slave.getDistance(), slave.getAngle(), slave.getOut());
+      if (master.dataChanged()) {
+        Serial.println("Angulo: " + String(master.getAngle()));
+        Serial.println("Distancia: " + String(master.getDistance()));
+        Serial.println("Out: " + String(master.getOut())); 
+        mover.processRemoteCommand(master.getDistance(), master.getAngle(), master.getOut());
       
     }
-  #endif
+    #elif not Master
+
+      if (slave.dataChanged()) {
+        Serial.println("Angulo: " + String(slave.getAngle()));
+        Serial.println("Distancia: " + String(slave.getDistance()));
+        Serial.println("Out: " + String(slave.getOut())); 
+        mover.processRemoteCommand(slave.getDistance(), slave.getAngle(), slave.getOut());
+        
+      }
+    #endif
+  }
 
   if (mover.getGetOutMode() == true ) {digitalWrite(ledPin, HIGH);} 
   else {digitalWrite(ledPin, LOW);}
