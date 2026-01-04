@@ -257,8 +257,8 @@ void setup() {
     #elif Master
       master.addRobotMAC(robot1);
       master.addRobotMAC(robot2);
-      master.begin("Raulordenador", "SistemasEmbebidos", 8888);
-      master.enableBroadcastIP("255.255.255.255");
+      master.begin("Raulordenador", "SistemasEmbebidos");
+      //master.enableBroadcastIP("255.255.255.255");
       Serial.println("MAESTRO listo");
     #endif
   #endif
@@ -271,8 +271,13 @@ void loop() {
   if (currentMillis - lastMillisCom >= comDelay) {
     lastMillisCom = currentMillis;
     #if Master
+      // Mantener conexión TCP
+      master.handleServer();
+
+      // Leer comandos TCP (13 bytes)
+      master.readTCP();
       // Read incoming ESP-NOW messages
-      master.readUDP();
+      //master.readUDP();
 
       if (master.dataChanged()) {
         Serial.println("Angulo: " + String(master.getAngle()));
